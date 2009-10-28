@@ -1,0 +1,47 @@
+#!/usr/bin/perl
+
+use strict;
+
+use File::Temp qw( tempfile tempdir );
+
+my $dir=shift || ".";
+
+chdir $dir or die $!;
+
+opendir DIR,".";
+
+my @files=grep !/^\./, readdir(DIR);
+
+my ($fh,$fn) = tempfile();
+
+print $fh "$_\n" for @files;
+
+system($ENV{EDITOR},$fn) and die "editor failure";
+
+unlink $fn;
+
+seek $fh,0,0;
+
+my @new_files=<$fh>;
+
+my %fn;
+
+$fn{$_}=1 for @files;
+
+if ( scalar @files == scalar @new_files ) {
+  for (my $i=0;$i<=$#files;$i++) {
+    chomp($new_files[$i]);
+    if ($files[$i] ne $new_files[$i]) {
+      if (++$fn{$new_files[$i]}>1) {
+        die "collision $new_files[$i]\n";
+      }
+    }
+  }
+  for (my $i=0;$i<=$#files;$i++) {
+    if ($files[$i] ne $new_files[$i]) {
+      rename($files[$i],$new_files[$i]) or die $!;
+    }
+  }
+} else {
+  die "lost something\n";
+}
