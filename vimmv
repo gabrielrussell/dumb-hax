@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 
 use strict;
 
@@ -8,40 +8,53 @@ my $dir=shift || ".";
 
 chdir $dir or die $!;
 
-opendir DIR,".";
+opendir DIR,"." or die $!;
 
-my @files=grep !/^\./, readdir(DIR);
+my @files=grep /^[^\.\n][^\n]*$/, readdir(DIR) or die $!;
 
-my ($fh,$fn) = tempfile();
+my ($tfh,$tfn) = tempfile() or die "couldn't create tempfile()S!?!?";
 
-print $fh "$_\n" for @files;
+print $tfh "$_\n" for @files;
 
-system($ENV{EDITOR},$fn) and die "editor failure";
+system($ENV{EDITOR},$tfn) and die "editor failure";
 
-unlink $fn;
+unlink $tfn or die $!;
 
-seek $fh,0,0;
+seek $tfh,0,0;
 
-my @new_files=<$fh>;
+my @new_files=<$tfh>;
 
-my %fn;
+chomp(@new_files);
 
-$fn{$_}=1 for @files;
+close $tfh or die $!;
 
-if ( scalar @files == scalar @new_files ) {
-  for (my $i=0;$i<=$#files;$i++) {
-    chomp($new_files[$i]);
-    if ($files[$i] ne $new_files[$i]) {
-      if (++$fn{$new_files[$i]}>1) {
-        die "collision $new_files[$i]\n";
-      }
+die "lost or gained something\n"
+  unless ( scalar @files == scalar @new_files );
+
+my ( @renames, %orig, %dest, %stat, $tricky );
+
+while (my $f = pop @files ) {
+    my $n = pop @new_files;
+    if ( $f ne $n ) {
+      push @renames,$f,$n;
+      ++$dest{$n};
+      ++$orig{$f};
+    } else {
+      ++$stat{$f};
     }
-  }
-  for (my $i=0;$i<=$#files;$i++) {
-    if ($files[$i] ne $new_files[$i]) {
-      rename($files[$i],$new_files[$i]) or die $!;
-    }
-  }
+}
+
+for my $file (keys %dest) {
+  die "non-unique renames" if $dest{$file}>1;
+  die "new file would overwrite existing file" if $stat{$file};
+  $tricky=1 if $orig{$file};
+}
+
+if ($tricky) {
+  die "tricky";
 } else {
-  die "lost something\n";
+  while (@renames) {
+    my ($f,$n) = splice(@renames,0,2); 
+    rename($f,$n) or die $!;
+  }
 }
