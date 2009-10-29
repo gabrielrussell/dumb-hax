@@ -4,21 +4,29 @@ use strict;
 
 use File::Temp qw( tempfile tempdir );
 
-my $dir=shift || ".";
-
-chdir $dir or die $!;
+if (my $dir=shift) {
+  chdir $dir or die $!;
+}
 
 opendir DIR,"." or die $!;
 
-my @files=grep /^[^\.\n][^\n]*$/, readdir(DIR) or die $!;
+my @files=grep /^[^\.\n][^\n]*$/,
+  readdir(DIR)
+    or die $!;
 
-my ($tfh,$tfn) = tempfile() or die "couldn't create tempfile()S!?!?";
+my ($tfh,$tfn) = tempfile()
+  or die "couldn't create tempfile()S!?!?";
 
 print $tfh "$_\n" for @files;
 
-system($ENV{EDITOR},$tfn) and die "editor failure";
+length($ENV{EDITOR})
+  or die "no EDITOR environment set";
 
-unlink $tfn or die $!;
+system($ENV{EDITOR},$tfn)
+  and die "editor failure";
+
+unlink $tfn
+  or die $!;
 
 seek $tfh,0,0;
 
@@ -26,17 +34,18 @@ my @new_files=<$tfh>;
 
 chomp(@new_files);
 
-close $tfh or die $!;
+close $tfh
+  or die $!;
 
-die "lost or gained something\n"
-  unless ( scalar @files == scalar @new_files );
+scalar @files == scalar @new_files
+  or die "lost or gained something";
 
-my ( @renames, %orig, %dest, %stat, $tricky );
+my ( %rename, %orig, %dest, %stat, $tricky );
 
 while (my $f = pop @files ) {
     my $n = pop @new_files;
     if ( $f ne $n ) {
-      push @renames,$f,$n;
+      $rename{$n}=$f;
       ++$dest{$n};
       ++$orig{$f};
     } else {
@@ -45,16 +54,31 @@ while (my $f = pop @files ) {
 }
 
 for my $file (keys %dest) {
-  die "non-unique renames" if $dest{$file}>1;
-  die "new file would overwrite existing file" if $stat{$file};
-  $tricky=1 if $orig{$file};
+  $dest{$file}>1
+    and die "non-unique renames";
+  $stat{$file}
+    and die "new file would overwrite existing file";
+  $orig{$file}
+    and $tricky=1;
 }
 
+my $tdir;
+
 if ($tricky) {
-  die "tricky";
-} else {
-  while (@renames) {
-    my ($f,$n) = splice(@renames,0,2); 
-    rename($f,$n) or die $!;
+  $tdir = tempdir();
+  for (keys %rename) {
+    rename($rename{$_},"$tdir/$rename{$_}")
+      or die $!;
+    $rename{$_}="$tdir/$rename{$_}";
   }
+} 
+  
+while ( my ($n,$f) = each %rename ) {
+  rename($f,$n)
+    or die "$!\nrename($f,$n)\n";
+}
+
+if ($tdir) {
+  rmdir($tdir)
+    or die $!;
 }
