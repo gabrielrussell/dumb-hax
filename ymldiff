@@ -1,0 +1,44 @@
+#!/usr/bin/perl
+use strict;
+use POSIX;
+my ($sec,$f1,$f2,@diff_params) = @ARGV;
+for ($sec,$f1,$f2) {
+    die "usage:\n$0 <yaml-section> <file1.yml> <file2.yml> [<diff args>]" unless length($_) > 0
+}
+my $data;
+for my $file ($f1,$f2) {
+    open FILE,$file or die "$file: $!";
+    my $s;
+    while (<FILE>) {
+        /^(\S+):/ and $s = $1;
+        $data->{$file}{$s}.=$_;
+    }
+}
+my ($pipe1i,$pipe1o) = POSIX::pipe();
+my ($pipe2i,$pipe2o) = POSIX::pipe();
+
+my $p1 = fork();
+if (!defined $p1) { die $!; }
+if ($p1==0) {
+    POSIX::close($pipe1o);
+    POSIX::close($pipe1i);
+    POSIX::close($pipe2i);
+    POSIX::dup2($pipe2o,1);
+    print $data->{$f2}{$sec};
+    exit;
+}
+
+my $p2 = fork();
+if (!defined $p2) { die $!; }
+if ($p2==0) {
+    POSIX::close($pipe2o);
+    POSIX::close($pipe2i);
+    POSIX::close($pipe1i);
+    POSIX::dup2($pipe1o,1);
+    print $data->{$f1}{$sec};
+    exit;
+}
+
+POSIX::close($pipe1o);
+POSIX::close($pipe2o);
+exec("diff",@diff_params,"/proc/$$/fd/$pipe1i","/proc/$$/fd/$pipe2i");
